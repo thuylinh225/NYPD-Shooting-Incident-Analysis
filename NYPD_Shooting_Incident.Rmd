@@ -1,0 +1,434 @@
+---
+output:
+  pdf_document: default
+  html_document: default
+---
+* This is a list of every shooting incident that occurred in NYC going back to 2006 through the end of 2020. This data is manually extracted every quarter and reviewed by the Office of Management Analysis and Planning before being posted on the NYPD website. Each record represents a shooting incident in NYC and includes information about the event, the location and time of occurrence. In addition, information related to suspect and victim demographics is also included.
+* Data was downloaded from https://catalog.data.gov/dataset/nypd-shooting-incident-data-historic
+
+# Step 1: Start an Rmd Document
+
+
+```{R}
+# install libraries
+library(tidyverse)
+library(lubridate)
+library(ggplot2)
+```
+
+
+```{R}
+#install.packages("plotrix")
+library(plotrix)
+```
+
+
+```{R}
+# read data
+data <- read.csv("https://data.cityofnewyork.us/api/views/833y-fsy8/rows.csv?accessType=DOWNLOAD")
+```
+
+
+```{R}
+# view some first rows of data
+head(data)
+```
+
+# Step 2: Tidy and Transform Data
+
+
+```{R}
+# remove some unused columns of data and view some first rows of data
+nypd <- subset (data, select = -c(X_COORD_CD, Y_COORD_CD, Latitude, Longitude, Lon_Lat))
+head(nypd)
+```
+
+
+```{R}
+# summary data
+summary(nypd)
+```
+
+
+```{R}
+# Quick glimpse data also tells us the number of rows (observations), columns (variables) and type of data
+glimpse(nypd)
+```
+
++ As we can see, there are some blank values in the data. Therefore, to deal with this, first, I'll set blank to NA and then I'll check for missing data. 
+
+
+```{R}
+# set blank to NA
+nypd[nypd == ""] <- NA
+```
+
+
+```{R}
+#Checking for missing data
+sapply(nypd,function(x) sum(is.na(x)))
+```
+
++ As we see above, there are 2 missing values of JURISDICTION_CODE and a lot of missing values of LOCATION_DESC, PERP_AGE_GROUP, PERP_SEX and PERP_RACE. To deal with this, I'll delete 2 missing values of JURISDICTION_CODE, fill "NONE" for the missing values of LOCATION_DESC and fill "UNKNOWN" for the missing values of PERP_AGE_GROUP, PERP_SEX and PERP_RACE. 
+
+
+```{R}
+# delete missing values in JURISDICTION_CODE
+nypd <- nypd %>% drop_na(JURISDICTION_CODE)
+```
+
+
+```{R}
+# replace NA with NONE in column LOCATION_DESC
+nypd$LOCATION_DESC[is.na(nypd$LOCATION_DESC)] <- "NONE"
+```
+
+
+```{R}
+# replace NA with UNKNOWN in column PERP_AGE_GROUP, PERP_SEX and PERP_RACE
+nypd$PERP_SEX <- sapply(nypd$PERP_SEX, as.character) # since our values are `factor`
+nypd[is.na(nypd)] <- "UNKNOWN"
+```
+
+
+```{R}
+# check missing values again
+sapply(nypd,function(x) sum(is.na(x)))
+```
+
+
+```{R}
+# summary data again
+summary(nypd)
+```
+
+Next, in the summary we can see there are 3 other values in the PERP_AGE_GROUP, I think it might be outliers there, so now I'm looking into it.
+
+
+```{R}
+# summary PERP_AGE_GROUP column
+summary(nypd$PERP_AGE_GROUP)
+```
+
+As we see, there are 3 outlier values in  PERP_AGE_GROUP column: 1020, 224, 940. Now, I'll plot PERP_AGE_GROUP for seeing those outliers more clearly.
+
+
+```{R}
+# plot PERP_AGE_GROUP column
+ggplot(nypd, aes(x=PERP_AGE_GROUP, y="")) + 
+  geom_boxplot()+
+  geom_jitter(position=position_jitter(0.05))
+```
+
+To solve this problem, I'll remove rows of outlier value out of our data.
+
+
+```{R}
+# delete rows with PERP_AGE_GROUP as 1020 or 224 or 940
+nypd <- nypd[!(nypd$PERP_AGE_GROUP=="1020" | nypd$PERP_AGE_GROUP=="224"| nypd$PERP_AGE_GROUP=="940"),]
+
+# summary to check PERP_AGE_GROUP column without outlier anymore 
+summary(nypd$PERP_AGE_GROUP)
+```
+
+
+```{R}
+#converting dates to standard MM-DD-YYYY format
+#nypd$OCCUR_DATE <- mdy(nypd$OCCUR_DATE)
+```
+
+
+```{R}
+#Sorting data by dates and view some last rows of data
+nypd<- nypd[order(nypd$OCCUR_DATE),]
+tail(nypd)
+```
+
+# Step 3: Add Visualizations and Analysis
+
++ Now, after cleaning up and check there is no missing data, I'll analyze and visualize data.
+### Question 1: How many victims are female, male and unisex?
+
+
+```{R}
+# Number of cases where the victims are female, male and unisex
+number_of_victim_female = nrow(filter(nypd, VIC_SEX == "F"))
+number_of_victim_male = nrow(filter(nypd, VIC_SEX == "M"))
+number_of_victim_unisex = nrow(filter(nypd, VIC_SEX == "U"))
+```
+
+
+```{R}
+print(paste("The number of female victims is: ",number_of_victim_female,"."))
+print(paste("The number of male victims is: ",number_of_victim_male,"."))
+print(paste("The number of unisex victims is: ",number_of_victim_unisex,"."))
+```
+
+
+```{R}
+# Create the data for the chart
+chem <- c("F", "M", "U")
+vol <- c(number_of_victim_female, number_of_victim_male, number_of_victim_unisex)
+```
+
+
+```{R}
+# create a dataframe x with the catagories of sex and the number of each kind
+x <- list(col1 = chem, col2 = vol)
+as.data.frame(x)
+x <- rep( c("Female","Male","Unisex"), c(number_of_victim_female,number_of_victim_male,number_of_victim_unisex))
+```
+
+Since pie charts are especially useful for proportions, let's have a look on the proportions of our victim's sex, than we will report on the graph in this case:
+
+
+```{R}
+# the proportions of our victim's sex
+paste(prop.table(table(x))*100, "%", sep = "")
+```
+
+
+```{R}
+# visualize Victim's sex pie chart
+pie3D(table(x), labels = paste(round(prop.table(table(x))*100), "%", sep = ""), 
+col = heat.colors(3), explode = 0.1, main = "Victim's Sex")
+legend("topright", legend = c("Female","Male","Unisex"), 
+fill = heat.colors(3), title = "Categories", cex = 0.5)
+```
+
+Base on the Victim's Sex chart, we can see that the most of victims are male (91%), the least victims are unisex (0.047%), and the remaining is female (9%).
+
+### Question 2: How many victim in each range of age?
+
+
+```{R}
+# Number of cases where the victims are female, male and unisex
+number_of_victim_U18 = nrow(filter(nypd, VIC_AGE_GROUP == "<18"))
+number_of_victim_U24 = nrow(filter(nypd, VIC_AGE_GROUP == "18-24"))
+number_of_victim_U44 = nrow(filter(nypd, VIC_AGE_GROUP == "25-44"))
+number_of_victim_U64 = nrow(filter(nypd, VIC_AGE_GROUP == "45-64"))
+number_of_victim_O65 = nrow(filter(nypd, VIC_AGE_GROUP == "65+"))
+number_of_victim_UN = nrow(filter(nypd, VIC_AGE_GROUP == "UNKNOWN"))
+```
+
+
+```{R}
+print(paste("The number of under 18 victims is: ",number_of_victim_U18,"."))
+print(paste("The number of 18-24 victims is: ",number_of_victim_U24,"."))
+print(paste("The number of 25-44 victims is: ",number_of_victim_U44,"."))
+print(paste("The number of 45-64 victims is: ",number_of_victim_U64,"."))
+print(paste("The number of 65+ victims is: ",number_of_victim_O65,"."))
+print(paste("The number of unknown age victims is: ",number_of_victim_UN,"."))
+```
+
+
+```{R}
+# Create the data for the chart
+kind <- c("Under 18","18-24","25-44","45-64","65+","Unknown")
+val <- c(number_of_victim_U18,number_of_victim_U24,number_of_victim_U44,number_of_victim_U64,number_of_victim_O65,number_of_victim_UN)
+```
+
+
+```{R}
+# Visualize the number of Victim's Age
+b<-barplot(val,names.arg=kind,xlab="Age",ylab="Count",col="blue",main="Victim's Age",border="yellow")
+```
+
+The histogram above tells us that the victim's age are most at 25-44 and the least are at 65+ and unknown.
+
+### Question 3: How many cases are investigated by each jurisdiction code, occurred at each city where the shooting incident happened?
+
+
+```{R}
+number_of_BOROX = nrow(filter(nypd, BORO == "BRONX"))
+number_of_QUEENS = nrow(filter(nypd, BORO == "QUEENS"))
+number_of_BROOKLYN = nrow(filter(nypd, BORO == "BROOKLYN"))
+number_of_MANHATTAN = nrow(filter(nypd, BORO == "MANHATTAN"))
+number_of_S_ISLAND = nrow(filter(nypd, BORO == "STATEN ISLAND"))
+```
+
+
+```{R}
+print(paste("The number of shooting incident occurred in Borox is: ",number_of_BOROX,"."))
+print(paste("The number of shooting incident occurred in Queens is: ",number_of_QUEENS,"."))
+print(paste("The number of shooting incident occurred in Brooklyn is: ",number_of_BROOKLYN,"."))
+print(paste("The number of shooting incident occurred in Manhattan is: ",number_of_MANHATTAN,"."))
+print(paste("The number of shooting incident occurred in Staten Island is: ",number_of_S_ISLAND,"."))
+```
+
+
+```{R}
+# create a table of counting cases were investigated by each jurisdiction_code at each city
+tbl1 <- nypd %>% group_by(JURISDICTION_CODE,BORO) %>% summarise(COUNT = n())
+as.data.frame(tbl1)
+```
+
+
+```{R}
+# plot the chart
+ggplot(tbl1, aes(JURISDICTION_CODE, COUNT, fill = BORO))+ geom_col(position = "dodge") +
+    ggtitle("Borough and Jurisdiction Code where the shooting incident occurred") 
+
+```
+
+As chart above, we can see that:
++ The most shooting incidents were investigated by Patrol (jurisdiction_code = 0) and occurred in Brooklyn.
++ Bronx is the second most place where the shooting incidents occurred.
++ The place where the least shooting incident occurred is State Island.
++ There are least of shooting incidents that were investigated by Transit (jurisdiction_code = 1).
+
+### Question 4: How many Perpetrator in each range of Race?
+
+
+```{R}
+number_of_AMERICAN = nrow(filter(nypd, PERP_RACE == "AMERICAN INDIAN/ALASKAN NATIVE"))
+number_of_ASIAN = nrow(filter(nypd, PERP_RACE == "ASIAN / PACIFIC ISLANDER"))
+number_of_BLACK = nrow(filter(nypd, PERP_RACE == "BLACK"))
+number_of_B_HIS = nrow(filter(nypd, PERP_RACE == "BLACK HISPANIC"))
+number_of_WHITE = nrow(filter(nypd, PERP_RACE == "WHITE"))
+number_of_W_HIS = nrow(filter(nypd, PERP_RACE == "WHITE HISPANIC"))
+number_of_UNKN= nrow(filter(nypd, PERP_RACE == "UNKNOWN"))
+```
+
+
+```{R}
+print(paste("The number of American Indian / Alaskan Native Perpetrators is: ",number_of_AMERICAN,"."))
+print(paste("The number of Asian / Pacific Islander Perpetrators is: ",number_of_ASIAN,"."))
+print(paste("The number of Black Perpetrators is: ",number_of_BLACK,"."))
+print(paste("The number of Black Hispanic Perpetrators is: ",number_of_B_HIS,"."))
+print(paste("The number of White Perpetrators is: ",number_of_WHITE,"."))
+print(paste("The number of White Hispanic Perpetrators is: ",number_of_W_HIS,"."))
+print(paste("The number of Unknown Perpetrators is: ",number_of_UNKN,"."))
+```
+
+
+```{R}
+# create a dataframe y with the catagories of Perpetrator's Race and the number of each level
+y <- nypd %>% group_by(PERP_RACE) %>% summarise(COUNT = n())
+as.data.frame(y)
+```
+
+
+```{R}
+# plot the bar chart for Perpetrator's Race
+ggplot(y, aes(x = PERP_RACE, y = COUNT)) + 
+         geom_bar(stat = "identity") + 
+         coord_flip() + scale_y_continuous(name="Perpetrator's Race") +
+  scale_x_discrete(name="Perpetrator's Race") +
+theme(axis.text.x = element_text(face="bold", color="#008000",
+                           size=8, angle=0),
+          axis.text.y = element_text(face="bold", color="#008000",
+                           size=8, angle=0))
+
+```
+
+As histogram above, we see that:
++ There were still have many cases that lacked of information about Perpetrator's Race.
++ Besides that, the most Perpetrator's Race is Black.
++ The least Perpetrator's Race is American Indian / Alaskan Native.
+
+### Question 5: How many Perpetrator at each level of Age in different level of Sex?
+
+
+```{R}
+# create a table of counting cases with each level of Perpatrator's age and Sex
+tbl2 <- nypd %>% group_by(PERP_SEX,PERP_AGE_GROUP) %>% summarise(COUNT = n())
+as.data.frame(tbl2)
+```
+
+
+```{R}
+# plot the chart
+ggplot(data=tbl2, aes(x=PERP_SEX, y=COUNT, fill=PERP_AGE_GROUP)) + 
+     geom_bar(stat="identity", colour="black")+
+     ggtitle("Perpetrator’s Age and Sex")
+```
+
+The chart above tells us that:
++ There are a lot of cases that were missing information about Perpetrator's sex and age yet.
++ Perpetrator concentrated at age of 18-24 and 25-44.
++ There are least Perpetrator at age of 65+.
++ There are more male perpetrator than female perpetrator.
+
+### Question 6: What time did every shooting incident occur?
+
+
+```{R}
+# create the data by hour
+nypd_by_hour <- nypd %>% 
+  mutate(HOUR = hour(strptime(OCCUR_TIME, '%H')) %>% as.integer() ) %>% 
+  group_by(HOUR) %>% 
+  summarise(COUNT = n())%>%
+  mutate(FREQ = round(COUNT / sum(COUNT), 4))
+nypd_by_hour
+```
+
+
+```{R}
+max(nypd_by_hour$COUNT)
+```
+
+
+```{R}
+min(nypd_by_hour$COUNT)
+```
+
+
+```{R}
+# plot the data by hour
+nypd_by_hour %>% 
+  filter(COUNT > 0) %>%
+  ggplot(aes(x = as.integer(HOUR), y = COUNT))+
+  geom_point(aes(color="COUNT"))+
+  theme(legend.position = "bottom",axis.text.x = element_text(angle = 90))+
+  labs(title = "NYPD SHOOTING INCIDENT BY HOUR",y=NULL)
+```
+
+The plot tells us that the maximum count of shooting incident (1996) occurred at hour 23  and the minimum count of shooting incident (177) occurred at hour 9.
+
+
+```{R}
+# Use the lm() function to perform a polinomial regression with count as the response
+# and hour as the predictor. 
+# Use the summary() function to print the results
+mod <- lm(COUNT ~ poly(HOUR, 2, raw=TRUE), data = nypd_by_hour)
+summary(mod)
+```
+
+Looking at the summary of this model, we can see that our p-value is very small, this means that the predictor were statistically significant in determining the Count. And the count of shooting incident is 1991.7738 - 300.8056 X hour + 13.5985 X $hour^{2}$.  
+
+
+```{R}
+# create new data with predict the shooting incident by hour
+nypd_by_hour_w_pred <- nypd_by_hour %>% mutate(PRED = round(predict(mod)))
+nypd_by_hour_w_pred
+```
+
+
+```{R}
+# plot the new data
+nypd_by_hour_w_pred %>% ggplot() + geom_point(aes(x = HOUR, y = COUNT), color = "blue") + 
+  geom_point(aes(x = HOUR, y = PRED), color = "red")
+```
+
+In the plot above, our predictions are in red and our actuals are in blue. So we can see the model does a reasonably good job of predicting at the lower hour (0-5) and at the higher hour (17-23).
+
+# Step 4: Conclusion and add bias identification
+
+In conclusion, base on NYPD Shooting Incident Data :
+
+* First, while cleaning up the data, I recognized that there are three outliers in Perpetrator's age. They are 1020, 224 and 940. A common cause of bias is caused by data outliers that differ greatly from other samples. Outlier biases should be removed from the survey population to achieve a more accurate result. Hence, I deleted those three outliers out of the data.
+
+* Second, there are two missing values of jurisdiction code and I solved this problem by deleting those 2 missing values.
+
+* Third, there are a lot of missing values about age, sex and race of Perpetrators. Since this is a huge number, deleting the instances with missing observations can result in biased parameters and estimates and reduce the statistical power of the analysis. So I thought that I should not remove or delete them out of the data. And, to deal with this, I filled those missing values as "UNKNOWN". There are many missing values about location of the shooting incident as well and I filled them with "NONE".
+
+* Next, base on the Victim's Sex chart and the Victim's Age plot, we can see that the most of victims are male and at age of 25-44, the least victims are unisex and at age of 65+.
+
+* As "Borough and Jurisdiction Code where the shooting incident occurred" histogram, we see that the most shooting incidents were investigated by Patrol and occurred in Brooklyn. Bronx is the second most place where the shooting incidents occurred. The place where the least shooting incident occurred is State Island. And Transit investigated least of shooting incidents.
+
+* Perpetrator' Rage histogram tells us that besides Unknown values, the most Perpetrator's Race is Black and the least Perpetrator's Race is American Indian / Alaskan Native.
+
+* Perpetrator's Sex and Age chart shows that the most Perpetrator were at age of 18-24 and 25-44. The least Perpetrator at age of 65+. And there are more male perpetrator than female perpetrator.
+
+* The maximum count of shooting incident (1996) occurred at 23 o'clock and the minimum count of shooting incident (177) occurred at 9 o'clock.
